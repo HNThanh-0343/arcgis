@@ -24,6 +24,8 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search, BasemapGallery) 
       }]
     },
   });
+  window.treeLayer = treeLayer;
+
 
   const map = new Map({
     basemap: "streets",
@@ -78,142 +80,163 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search, BasemapGallery) 
 
   // Search
   view.when(() => {
-
-    //Load areas initially
+    const areaSelect = document.getElementById("areaFilter");
+    const roadSelect = document.getElementById("roadFilter");
+  
+    // helper to build <option> list from a Set of strings
+    function fillSelect(set, select) {
+      select.innerHTML = `<option value="">All ${ select.id === 'areaFilter' ? 'Areas' : 'Roads' }</option>`;
+      [...set].sort().forEach(val => {
+        const o = document.createElement("option");
+        o.value = val;
+        o.textContent = val;
+        select.appendChild(o);
+      });
+    }
+  
+    // 1) On load: fetch every feature’s area & road in one go
     treeLayer.queryFeatures({
       where: "1=1",
-      outFields: ["DiaChi"],
+      outFields: ["DiaChi", "TenTuyenDu"],
       returnGeometry: false
-    }).then(({ features }) => {
-      const areaSet = new Set();
+    })
+    .then(({ features }) => {
+      const areas = new Set();
+      const roads = new Set();
+    
       features.forEach(f => {
-        const area = f.attributes.diachi;
-        if (area) areaSet.add(area);
+        const area = f.attributes["diachi"];
+        const road = f.attributes["tentuyendu"];
+    
+        // Only add if it's a valid, non-empty string
+        if (typeof area === "string" && area.trim()) {
+          areas.add(area.trim());
+        }
+        if (typeof road === "string" && road.trim()) {
+          roads.add(road.trim());
+        }
       });
-
-      const areaSelect = document.getElementById("areaFilter");
-      [...areaSet].sort().forEach(area => {
-        const o = document.createElement("option");
-        o.value = area;
-        o.textContent = area;
-        areaSelect.appendChild(o);
-      });
-    });
-    document.getElementById("areaFilter").addEventListener("change", (e) => {
-      const selectedArea = e.target.value;
-      const roadSelect = document.getElementById("roadFilter");
-
-      // Clear old options
-      roadSelect.innerHTML = "<option value=''>All Roads</option>";
-
-      if (!selectedArea) return; // Do nothing if "All Areas"
-
-      //Load roads after areas
-      treeLayer.queryFeatures({
-        where: `DiaChi = '${selectedArea.replace(/'/g, "''")}'`,
-        outFields: ["TenTuyenDu"],
-        returnGeometry: false
-      }).then(({ features }) => {
-        const roadSet = new Set();
-        features.forEach(f => {
-          const road = f.attributes.tentuyendu;
-          if (road) roadSet.add(road);
+    
+      fillSelect(areas, document.getElementById("areaFilter"));
+      fillSelect(roads, document.getElementById("roadFilter"));
+    })
+    .catch(err => console.error("Filter load error:", err));    
+  
+    // 2) When Area changes, reload only the roads in that area
+    areaSelect.addEventListener("change", () => {
+      const selArea = areaSelect.value;
+  
+      // if no area selected, reload ALL roads
+      if (!selArea) {
+        // trigger the initial “all roads” load again
+        treeLayer.queryFeatures({
+          where: "1=1",
+          outFields: ["TenTuyenDu"],
+          returnGeometry: false
+        })
+        .then(({ features }) => {
+          const roads = new Set(features.map(f => f.attributes.tentuyendu).filter(r => r));
+          fillSelect(roads, roadSelect);
         });
-
-        [...roadSet].sort().forEach(road => {
-          const o = document.createElement("option");
-          o.value = road;
-          o.textContent = road;
-          roadSelect.appendChild(o);
-        });
-      });
-    });
-
-    // Search button function
-    document.getElementById("treeSearchBtn").addEventListener("click", () => {
-      const name = document.getElementById("treeSearchInput").value.trim();
-      const road = document.getElementById("roadFilter").value;
-      const area = document.getElementById("areaFilter").value;
-      if (!name) {
-        alert("Please enter a tree name");
         return;
       }
   
-      const clauses = [];
-
-      if (name) {
-        const escaped = name.toUpperCase().replace(/'/g, "''");
-        clauses.push(`UPPER(TenCay) LIKE '%${escaped}%'`);
-      }
-      if (road) {
-        clauses.push(`TenTuyenDu = '${road.replace(/'/g,"''")}'`);
-      }
-      if (area) {
-        clauses.push(`DiaChi = '${area.replace(/'/g,"''")}'`);
-      }
-    
-      const where = clauses.length ? clauses.join(" AND ") : "1=1";
-    
+      // otherwise fetch only roads where DiaChi = selArea
       treeLayer.queryFeatures({
-        where,
-        outFields: ["TenCay","LoaiCay","TenTuyenDu","DiaChi"],
-        returnGeometry: true
+        where: `DiaChi = '${selArea.replace(/'/g, "''")}'`,
+        outFields: ["TenTuyenDu"],
+        returnGeometry: false
       })
-      .then(result => {
-        const container = document.getElementById("treeSearchResults");
-        container.innerHTML = "";
-        if (!result.features.length) {
-          container.textContent = "No matches found";
-          return;
-        }
-  
-        // build table
-        const table = document.createElement("table");
-        table.border = 1;
-        const hdr = table.insertRow();
-        ["Tên Cây","Loại Cây","Tuyến Đường","Khu vực"].forEach(txt => {
-          const th = document.createElement("th");
-          th.textContent = txt;
-          hdr.appendChild(th);
-        });
-  
-        result.features.forEach(feat => {
-          console.log("Feature attributes:", feat.attributes);
-
-          const row = table.insertRow();
-          row.insertCell().textContent = feat.attributes.tencay;
-          row.insertCell().textContent = feat.attributes.loaicay;
-          row.insertCell().textContent = feat.attributes.tentuyendu;
-          row.insertCell().textContent = feat.attributes.diachi;
-          row.style.cursor = "pointer";
-  
-          row.addEventListener("click", () => {
-            view.graphics.removeAll();
-            feat.symbol = {
-              type: "simple-marker",
-              style: "diamond",
-              size: "16px",
-              color: "orange",
-              outline: { width: 2, color: "white" }
-            };
-            view.graphics.add(feat);
-  
-            // zoom to feature
-            if (feat.geometry.extent) {
-              view.goTo(feat.geometry.extent.expand(2));
-            } else {
-              view.goTo({ center: feat.geometry, zoom: 16 });
-            }
-          });
-        });
-  
-        container.appendChild(table);
+      .then(({ features }) => {
+        const roads = new Set(features.map(f => f.attributes.tentuyendu).filter(r => r));
+        fillSelect(roads, roadSelect);
       })
-      .catch(err => {
-        console.error(err);
-        alert("Search error—see console");
-      });
+      .catch(err => console.error("Error loading roads for area:", err));
     });
+    
+  
+      // Search button function
+      document.getElementById("treeSearchBtn").addEventListener("click", () => {
+        const name = document.getElementById("treeSearchInput").value;
+        const road = document.getElementById("roadFilter").value;
+        const area = document.getElementById("areaFilter").value;
+
+        const clauses = [];
+
+        if (name) {
+          const escaped = name.replace(/'/g, "''");
+          clauses.push(`LOWER(TenCay) LIKE LOWER('%${escaped}%')`);
+        }
+        if (road) {
+          clauses.push(`TenTuyenDu = '${road.replace(/'/g,"''")}'`);
+        }
+        if (area) {
+          clauses.push(`DiaChi = '${area.replace(/'/g,"''")}'`);
+        }
+
+        const where = clauses.length ? clauses.join(" AND ") : "1=1";
+
+        treeLayer.queryFeatures({
+          where,
+          outFields: ["TenCay","LoaiCay","TenTuyenDu","DiaChi"],
+          returnGeometry: true
+        })
+        .then(result => {
+          const container = document.getElementById("treeSearchResults");
+          container.innerHTML = "";
+          if (!result.features.length) {
+            container.textContent = "No matches found";
+            return;
+          }
+
+          // build table
+          const table = document.createElement("table");
+          table.border = 1;
+          const hdr = table.insertRow();
+          ["Tên Cây","Loại Cây","Tuyến Đường","Khu vực"].forEach(txt => {
+            const th = document.createElement("th");
+            th.textContent = txt;
+            hdr.appendChild(th);
+          });
+
+          result.features.forEach(feat => {
+            console.log("Feature attributes:", feat.attributes);
+
+            const row = table.insertRow();
+            row.insertCell().textContent = feat.attributes.tencay;
+            row.insertCell().textContent = feat.attributes.loaicay;
+            row.insertCell().textContent = feat.attributes.tentuyendu;
+            row.insertCell().textContent = feat.attributes.diachi;
+            row.style.cursor = "pointer";
+
+            row.addEventListener("click", () => {
+              view.graphics.removeAll();
+              feat.symbol = {
+                type: "simple-marker",
+                style: "diamond",
+                size: "16px",
+                color: "orange",
+                outline: { width: 2, color: "white" }
+              };
+              view.graphics.add(feat);
+
+              // zoom to feature
+              if (feat.geometry.extent) {
+                view.goTo(feat.geometry.extent.expand(2));
+              } else {
+                view.goTo({ center: feat.geometry, zoom: 16 });
+              }
+            });
+          });
+
+          container.appendChild(table);
+        })
+        .catch(err => {
+          console.error(err);
+          alert("Search error—see console");
+        });
+      });
+
 
     const mainSidebar = document.getElementById("mainSidebar");
     const searchSidebar = document.getElementById("searchSidebar");

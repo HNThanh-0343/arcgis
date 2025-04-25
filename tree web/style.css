@@ -31,6 +31,8 @@ html, body {
   z-index: 10;
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  max-height: calc(100vh - 20px);
+  overflow-y: auto;
 }
 
 /* Headings */
@@ -101,7 +103,7 @@ button:hover {
 
 /* Search results table */
 #treeSearchResults {
-  max-height: 200px;
+  max-height: 225px;
   overflow-y: auto;
   margin-top: 10px;
   border: 1px solid #ccc;
