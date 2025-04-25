@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tree Map App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- ArcGIS CSS -->
+  <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css" />
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="mainSidebar" class="sidebar">
+      <h2>Map Controls</h2>
+
+      <div id="layerlist"></div>
+
+      <label><input type="checkbox" id="layerToggle" checked> Show Tree Layer</label>
+
+      <div>
+        <button onclick="togglebasemap()"> Basemaps </button>
+        <div id="basemapContainer" style="display: none; margin-top: 8px;">
+          <div id="basemap"></div> 
+        </div>
+      </div>
+
+      <div>
+        <h4>Trees type</h4>
+          <label><input type="checkbox" class="treeTypeCheckbox" value="1" checked>Type 1: diameter ≤ 20cm</label>
+          <label><input type="checkbox" class="treeTypeCheckbox" value="2" checked>Type 2: diameter 20-50cm</label>
+          <label><input type="checkbox" class="treeTypeCheckbox" value="3" checked>Type 3: diameter > 50cm</label>
+      </div>
+
+      <button id="openSearchMenuBtn">🔍 Open Search</button>
+
+    </div>
+    
+    <!-- Search Sidebar -->
+    <div id="searchSidebar" class="sidebar" style="display: none;">
+      <h2>Search Trees</h2>
+
+      <div>
+        <label for="treeSearchInput">Search Tree Name:</label><br>
+        <input type="text" id="treeSearchInput" placeholder="Enter tree name">
+      </div>
+    
+      <div>
+        <label for="roadFilter">Road:</label>
+        <select id="roadFilter">
+          <option value="">All Roads</option>
+        </select>
+      </div>
+      
+      <div>
+        <label for="areaFilter">Area:</label>
+        <select id="areaFilter">
+          <option value="">All Areas</option>
+        </select>
+      </div>      
+    
+      <div>
+        <button id="treeSearchBtn">Search</button>
+      </div>
+    
+      <button id="backToMainBtn">← Back</button>
+
+      <div id="treeSearchResults"></div>
+    </div>  
+
+    <div id="viewDiv"></div>
+
+  </div>
+
+  <!-- ArcGIS JS -->
+  <script src="https://js.arcgis.com/4.29/"></script>
+  <!-- Custom JS -->
+  <script src="app.js"></script>
+
+</body>
+</html>

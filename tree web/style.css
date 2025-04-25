@@ -1,0 +1,129 @@
+@import "https://js.arcgis.com/4.29/esri/themes/light/main.css";
+
+/* Base styles */
+@import "https://js.arcgis.com/4.29/esri/themes/light/main.css";
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+#container {
+  position: relative;
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
+#viewDiv {
+  flex: 1;
+}
+
+/* Shared sidebar styles */
+#mainSidebar, #searchSidebar {
+  width: 300px;
+  padding: 16px;
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  background: #ffffff;
+  z-index: 10;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+/* Headings */
+#mainSidebar h2,
+#mainSidebar h4,
+#searchSidebar h2,
+#searchSidebar h4 {
+  margin: 0 0 10px 0;
+  color: #2a2a2a;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 6px;
+}
+
+/* Section spacing */
+#mainSidebar > div,
+#searchSidebar > div {
+  margin-bottom: 16px;
+}
+
+/* Labels and checkboxes */
+label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+  font-size: 14px;
+  color: #333;
+}
+
+input[type="checkbox"] {
+  margin-right: 6px;
+}
+
+/* Buttons */
+button {
+  padding: 8px 12px;
+  border: none;
+  background-color: #007acc;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  margin-top: 6px;
+}
+
+button:hover {
+  background-color: #005f99;
+}
+
+/* Basemap container */
+#basemapContainer {
+  display: none;
+  position: fixed;
+  top: 100px;
+  left: 280px;
+  width: 240px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: #fff;
+  padding: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  z-index: 1000;
+}
+
+#basemapContainer .esri-widget {
+  width: 100%;
+}
+
+/* Search results table */
+#treeSearchResults {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+#treeSearchResults table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#treeSearchResults th,
+#treeSearchResults td {
+  padding: 6px;
+  border: 1px solid #ccc;
+  text-align: left;
+  font-size: 14px;
+  background-color: #fff;
+  color: #000;
+}
+
+#treeSearchResults tr:hover {
+  background-color: #f0f0f0;
+  cursor: pointer;
+}
