@@ -78,14 +78,15 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search, BasemapGallery) 
     });
   });
 
-  // Search
+  // Search base on tree name or area/road
   view.when(() => {
+
     const areaSelect = document.getElementById("areaFilter");
     const roadSelect = document.getElementById("roadFilter");
   
-    // helper to build <option> list from a Set of strings
     function fillSelect(set, select) {
-      select.innerHTML = `<option value="">All ${ select.id === 'areaFilter' ? 'Areas' : 'Roads' }</option>`;
+      select.innerHTML = 
+        `<option value="">All ${ select.id === 'areaFilter' ? 'Areas' : 'Roads' }</option>`;
       [...set].sort().forEach(val => {
         const o = document.createElement("option");
         o.value = val;
@@ -94,148 +95,153 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search, BasemapGallery) 
       });
     }
   
-    // 1) On load: fetch every feature’s area & road in one go
+    // ▶️ 1) Fetch all distinct areas
     treeLayer.queryFeatures({
       where: "1=1",
-      outFields: ["DiaChi", "TenTuyenDu"],
-      returnGeometry: false
+      outFields: ["DiaChi"],
+      returnGeometry: false,
+      returnDistinctValues: true,      
+      orderByFields: ["DiaChi"]        
     })
     .then(({ features }) => {
-      const areas = new Set();
-      const roads = new Set();
-    
-      features.forEach(f => {
-        const area = f.attributes["diachi"];
-        const road = f.attributes["tentuyendu"];
-    
-        // Only add if it's a valid, non-empty string
-        if (typeof area === "string" && area.trim()) {
-          areas.add(area.trim());
-        }
-        if (typeof road === "string" && road.trim()) {
-          roads.add(road.trim());
-        }
-      });
-    
-      fillSelect(areas, document.getElementById("areaFilter"));
-      fillSelect(roads, document.getElementById("roadFilter"));
+      const areas = new Set(features.map(f => f.attributes.diachi).filter(a => a));
+      fillSelect(areas, areaSelect);
     })
-    .catch(err => console.error("Filter load error:", err));    
-  
-    // 2) When Area changes, reload only the roads in that area
+    .catch(console.error);
+
+    // ▶️ 2) When area changes, fetch *distinct* roads in that area
     areaSelect.addEventListener("change", () => {
       const selArea = areaSelect.value;
-  
-      // if no area selected, reload ALL roads
-      if (!selArea) {
-        // trigger the initial “all roads” load again
-        treeLayer.queryFeatures({
-          where: "1=1",
-          outFields: ["TenTuyenDu"],
-          returnGeometry: false
-        })
+      const q = {
+        where: selArea ? `DiaChi='${selArea.replace(/'/g,"''")}'` : "1=1",
+        outFields: ["TenTuyenDu"],
+        returnGeometry: false,
+        returnDistinctValues: true,
+        orderByFields: ["TenTuyenDu"]
+      };
+      treeLayer.queryFeatures(q)
         .then(({ features }) => {
           const roads = new Set(features.map(f => f.attributes.tentuyendu).filter(r => r));
           fillSelect(roads, roadSelect);
-        });
+        })
+        .catch(console.error);
+    });
+  
+    // Search button
+    document.getElementById("treeSearchBtn").addEventListener("click", () => {
+      const name = document.getElementById("treeSearchInput").value.trim();
+      const road = roadSelect.value;
+      const area = areaSelect.value;
+  
+      // Build an array of individual WHERE clauses
+      const clauses = [];
+      if (name) {
+        const escaped = name.replace(/'/g, "''");
+        clauses.push(`LOWER(TenCay) LIKE LOWER('%${escaped}%')`);
+      }
+      if (road) {
+        clauses.push(`TenTuyenDu = '${road.replace(/'/g, "''")}'`);
+      }
+      if (area) {
+        clauses.push(`DiaChi = '${area.replace(/'/g, "''")}'`);
+      }
+  
+      if (clauses.length === 0) {
+        alert("Please enter a tree name or select a road/area");
         return;
       }
   
-      // otherwise fetch only roads where DiaChi = selArea
-      treeLayer.queryFeatures({
-        where: `DiaChi = '${selArea.replace(/'/g, "''")}'`,
-        outFields: ["TenTuyenDu"],
-        returnGeometry: false
-      })
-      .then(({ features }) => {
-        const roads = new Set(features.map(f => f.attributes.tentuyendu).filter(r => r));
-        fillSelect(roads, roadSelect);
-      })
-      .catch(err => console.error("Error loading roads for area:", err));
-    });
-    
+      // Combine all clauses with AND
+      const where = clauses.join(" AND ");
   
-      // Search button function
-      document.getElementById("treeSearchBtn").addEventListener("click", () => {
-        const name = document.getElementById("treeSearchInput").value;
-        const road = document.getElementById("roadFilter").value;
-        const area = document.getElementById("areaFilter").value;
-
-        const clauses = [];
-
-        if (name) {
-          const escaped = name.replace(/'/g, "''");
-          clauses.push(`LOWER(TenCay) LIKE LOWER('%${escaped}%')`);
+      // Execute the feature query
+      treeLayer.queryFeatures({
+        where,
+        outFields: ["TenCay", "LoaiCay", "TenTuyenDu", "DiaChi"],
+        returnGeometry: true
+      })
+      .then(result => {
+        const container = document.getElementById("treeSearchResults");
+        container.innerHTML = ""; // clear old results
+  
+        if (!result.features.length) {
+          container.textContent = "No matches found";
+          return;
         }
-        if (road) {
-          clauses.push(`TenTuyenDu = '${road.replace(/'/g,"''")}'`);
-        }
-        if (area) {
-          clauses.push(`DiaChi = '${area.replace(/'/g,"''")}'`);
-        }
+  
+        // Build results table
+        const table = document.createElement("table");
+        table.border = 1;
+        const hdr = table.createTHead().insertRow();
+        const headers = ["Tên Cây", "Loại Cây", "Tuyến Đường", "Khu vực"];
+        const fieldNames = ["tencay", "loaicay", "tentuyendu", "diachi"];
 
-        const where = clauses.length ? clauses.join(" AND ") : "1=1";
+        let sortState = {}; // Track sort order per column
 
-        treeLayer.queryFeatures({
-          where,
-          outFields: ["TenCay","LoaiCay","TenTuyenDu","DiaChi"],
-          returnGeometry: true
-        })
-        .then(result => {
-          const container = document.getElementById("treeSearchResults");
-          container.innerHTML = "";
-          if (!result.features.length) {
-            container.textContent = "No matches found";
-            return;
-          }
+        headers.forEach((txt, idx) => {
+          const th = document.createElement("th");
+          th.textContent = txt;
+          th.style.cursor = "pointer";
+          hdr.appendChild(th);
 
-          // build table
-          const table = document.createElement("table");
-          table.border = 1;
-          const hdr = table.insertRow();
-          ["Tên Cây","Loại Cây","Tuyến Đường","Khu vực"].forEach(txt => {
-            const th = document.createElement("th");
-            th.textContent = txt;
-            hdr.appendChild(th);
+          th.addEventListener("click", () => {
+            const field = fieldNames[idx];
+            const rows = Array.from(table.tBodies[0]?.rows || []);
+            const ascending = !sortState[field]; // toggle
+
+            rows.sort((a, b) => {
+              const valA = a.cells[idx].textContent.trim().toLowerCase();
+              const valB = b.cells[idx].textContent.trim().toLowerCase();
+              if (valA < valB) return ascending ? -1 : 1;
+              if (valA > valB) return ascending ? 1 : -1;
+              return 0;
+            });
+
+            rows.forEach(row => table.tBodies[0].appendChild(row));
+            sortState = { [field]: ascending }; // Only one column sorted at a time
           });
+        });
 
-          result.features.forEach(feat => {
-            console.log("Feature attributes:", feat.attributes);
+        // Populate rows
+        const tbody = table.createTBody();
+        result.features.forEach(feat => {
+          const row = tbody.insertRow();
+          row.insertCell().textContent = feat.attributes.tencay;
+          row.insertCell().textContent = feat.attributes.loaicay;
+          row.insertCell().textContent = feat.attributes.tentuyendu;
+          row.insertCell().textContent = feat.attributes.diachi;
+          row.style.cursor = "pointer";
 
-            const row = table.insertRow();
-            row.insertCell().textContent = feat.attributes.tencay;
-            row.insertCell().textContent = feat.attributes.loaicay;
-            row.insertCell().textContent = feat.attributes.tentuyendu;
-            row.insertCell().textContent = feat.attributes.diachi;
-            row.style.cursor = "pointer";
-
-            row.addEventListener("click", () => {
-              view.graphics.removeAll();
-              feat.symbol = {
+          // Zoom to the tree
+          row.addEventListener("click", () => {
+            view.graphics.removeAll();
+            view.graphics.add({
+              geometry: feat.geometry,
+              symbol: {
                 type: "simple-marker",
                 style: "diamond",
                 size: "16px",
                 color: "orange",
                 outline: { width: 2, color: "white" }
-              };
-              view.graphics.add(feat);
-
-              // zoom to feature
-              if (feat.geometry.extent) {
-                view.goTo(feat.geometry.extent.expand(2));
-              } else {
-                view.goTo({ center: feat.geometry, zoom: 16 });
               }
             });
+            const centerPoint = feat.geometry.extent
+              ? feat.geometry.extent.center
+              : feat.geometry;
+            view.goTo({
+              center: centerPoint,
+              scale: 2000    // ~1:2 000 scale on every basemap
+            });
           });
-
-          container.appendChild(table);
-        })
-        .catch(err => {
-          console.error(err);
-          alert("Search error—see console");
         });
+
+        container.appendChild(table); 
+      })
+      .catch(err => {
+        console.error(err);
+        alert("Search error—see console");
       });
+    });
 
 
     const mainSidebar = document.getElementById("mainSidebar");
