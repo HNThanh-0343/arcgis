@@ -33,6 +33,8 @@
           <label><input type="checkbox" class="treeTypeCheckbox" value="3" checked>Type 3: diameter > 50cm</label>
       </div>
 
+      <br><label><input type="checkbox" id="clusterToggle"> Tree cluster toggle </label>
+
       <button id="openSearchMenuBtn">🔍 Open Search</button>
 
     </div>
@@ -45,20 +47,20 @@
         <label for="treeSearchInput">Enter Tree Name:</label>
         <input type="text" id="treeSearchInput" placeholder="Enter tree name">
       </div>
+
+      <div>
+        <label for="areaFilter">Area:</label>
+        <select id="areaFilter">
+          <option value="">All Areas</option>
+        </select>
+      </div>    
     
       <div>
         <label for="roadFilter">Road:</label>
         <select id="roadFilter">
           <option value="">All Roads</option>
         </select>
-      </div>
-      
-      <div>
-        <label for="areaFilter">Area:</label>
-        <select id="areaFilter">
-          <option value="">All Areas</option>
-        </select>
-      </div>      
+      </div>  
     
       <div>
         <button id="treeSearchBtn">Search</button>
@@ -68,7 +70,9 @@
 
 
         <div id="treeSearchResults"></div>
-    </div>  
+    </div>
+    
+    <button id="sidebarToggle" class="toggle-btn">←</button>
 
     <div id="viewDiv"></div>
 

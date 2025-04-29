@@ -6,26 +6,25 @@ require([
   "esri/widgets/LayerList",
   "esri/widgets/Search",
   "esri/widgets/BasemapGallery",
+  "esri/widgets/Home",  
 ], 
-function(Map, MapView, FeatureLayer, Legend, LayerList ,Search, BasemapGallery) {
+function(Map, MapView, FeatureLayer, Legend, LayerList ,Search ,BasemapGallery,Home) {
 
   const treeLayer = new FeatureLayer({
-    url: "https://gishue.hue.gov.vn/server/rest/services/BanDoDuLich_HueCIT/CayXanh_CQ_DuLich/FeatureServer/0",
+    url: "https://gis.eastnegev.org/arcgis/rest/services/trees/FeatureServer/0",
     popupTemplate: {
       title: "{TenCay}",
       content: [{
         type: "fields",
         fieldInfos: [
-          { fieldName: "TenCay", label: "Tên Cây" },
-          { fieldName: "TenTuyenDu", label: "Tuyến Đường"},
-          { fieldName: "MoTa", label: "Mô tả" },
-          { fieldName: "DiaChi", label: "Khu vực"}
+          { fieldName: "point_Elevation ", label: "Elevation" },
         ]
       }]
     },
   });
-  window.treeLayer = treeLayer;
 
+  window.treeLayer = treeLayer;
+  
 
   const map = new Map({
     basemap: "streets",
@@ -35,15 +34,34 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search, BasemapGallery) 
   const view = new MapView({
     container: "viewDiv",
     map: map,
-    center: [107.6, 16.47],
+
     zoom: 13
+  });
+
+  treeLayer.when(() => {
+    treeLayer.queryExtent().then((response) => {
+      if (response.extent) {
+        view.goTo(response.extent.expand(1.2));
+      }
+    });
   });
 
   const layerlist = new LayerList({
       view,
       container: "layerlist"
   });
-  
+
+  // Search widget
+  const search = new Search({view: view});
+  view.ui.add(search , "top-right"),
+
+  // Zoom
+  view.ui.move("zoom", "top-right");
+
+  // Home button
+  const home = new Home({view: view });
+  view.ui.add(home, "top-right");
+
   // Legend
   const legend = new Legend({ view: view });
   view.ui.add(legend, "bottom-right");
@@ -57,6 +75,46 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search, BasemapGallery) 
   // Layer visibility
   document.getElementById("layerToggle").addEventListener("change", (e) => {
     treeLayer.visible = e.target.checked;
+  });
+
+  // full cluster settings in one place
+  const clusterConfig = {
+    type: "cluster",
+    clusterRadius: "80px",
+    clusterMinSize: "20px",
+    clusterMaxSize: "100px",
+    visibilityInfo: {
+      type: "scale",
+      minScale: 5000
+    },
+    popupTemplate: {
+      title: "{cluster_count} trees",
+      content: "This cluster represents {cluster_count} trees"
+    },
+    labelingInfo: [
+      {
+        deconflictionStrategy: "none",
+        labelPlacement: "center-center",
+        labelExpressionInfo: { expression: "$feature.cluster_count" },
+        symbol: {
+          type: "text",
+          color: "#fff",
+          haloColor: "#000",
+          haloSize: "1px",
+          font: { size: "14px", weight: "bold" }
+        }
+      }
+    ]
+  };
+
+  // Cluster toggle
+  document.getElementById("clusterToggle").addEventListener("change", (e) => {
+    treeLayer.featureReduction = e.target.checked
+      ? { type: "cluster" }
+      : null;
+
+    treeLayer.featureReduction = e.target.checked ? clusterConfig : null;
+    treeLayer.refresh();
   });
 
   // Tree type checkboxes
@@ -95,7 +153,7 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search, BasemapGallery) 
       });
     }
   
-    // ▶️ 1) Fetch all distinct areas
+    // 1) Fetch all distinct areas
     treeLayer.queryFeatures({
       where: "1=1",
       outFields: ["DiaChi"],
@@ -109,7 +167,7 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search, BasemapGallery) 
     })
     .catch(console.error);
 
-    // ▶️ 2) When area changes, fetch *distinct* roads in that area
+    // 2) When area changes, fetch distinct roads in that area
     areaSelect.addEventListener("change", () => {
       const selArea = areaSelect.value;
       const q = {
@@ -169,73 +227,88 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search, BasemapGallery) 
           return;
         }
   
-        // Build results table
-        const table = document.createElement("table");
-        table.border = 1;
-        const hdr = table.createTHead().insertRow();
-        const headers = ["Tên Cây", "Loại Cây", "Tuyến Đường", "Khu vực"];
-        const fieldNames = ["tencay", "loaicay", "tentuyendu", "diachi"];
+      // Build results table
+      const table = document.createElement("table");
+      table.border = 1;
 
-        let sortState = {}; // Track sort order per column
+      // Create thead and header row
+      const thead = table.createTHead();
+      const hdr = thead.insertRow();
 
-        headers.forEach((txt, idx) => {
-          const th = document.createElement("th");
-          th.textContent = txt;
-          th.style.cursor = "pointer";
-          hdr.appendChild(th);
+      const headers = ["Tên Cây", "Loại Cây", "Tuyến Đường", "Khu vực"];
+      const fieldNames = ["tencay", "loaicay", "tentuyendu", "diachi"];
 
-          th.addEventListener("click", () => {
-            const field = fieldNames[idx];
-            const rows = Array.from(table.tBodies[0]?.rows || []);
-            const ascending = !sortState[field]; // toggle
+      // Track current sort
+      let currentSort = { index: -1, asc: true };
 
-            rows.sort((a, b) => {
-              const valA = a.cells[idx].textContent.trim().toLowerCase();
-              const valB = b.cells[idx].textContent.trim().toLowerCase();
-              if (valA < valB) return ascending ? -1 : 1;
-              if (valA > valB) return ascending ? 1 : -1;
-              return 0;
-            });
+      headers.forEach((txt, idx) => {
+        const th = document.createElement("th");
+        th.textContent = txt;
+        th.style.cursor = "pointer";
 
-            rows.forEach(row => table.tBodies[0].appendChild(row));
-            sortState = { [field]: ascending }; // Only one column sorted at a time
+        // Click to sort
+        th.addEventListener("click", () => {
+          const tbody = table.tBodies[0];
+          const rows = Array.from(tbody.rows);
+          const ascending = (currentSort.index === idx) ? !currentSort.asc : true;
+
+          rows.sort((a, b) => {
+            const aVal = a.cells[idx].textContent.trim().toLowerCase();
+            const bVal = b.cells[idx].textContent.trim().toLowerCase();
+            if (aVal < bVal) return ascending ? -1 : 1;
+            if (aVal > bVal) return ascending ? 1 : -1;
+            return 0;
           });
+          // Re-append sorted rows
+          rows.forEach(r => tbody.appendChild(r));
+
+          // Update sort state
+          currentSort = { index: idx, asc: ascending };
+
+          // Remove arrows from all headers
+          Array.from(hdr.cells).forEach(cell => {
+            cell.textContent = cell.textContent.replace(/ ▲| ▼/g, "");
+          });
+          // Add arrow to current header
+          th.textContent = `${txt} ${ascending ? "▲" : "▼"}`;
         });
 
-        // Populate rows
-        const tbody = table.createTBody();
-        result.features.forEach(feat => {
-          const row = tbody.insertRow();
-          row.insertCell().textContent = feat.attributes.tencay;
-          row.insertCell().textContent = feat.attributes.loaicay;
-          row.insertCell().textContent = feat.attributes.tentuyendu;
-          row.insertCell().textContent = feat.attributes.diachi;
-          row.style.cursor = "pointer";
+        hdr.appendChild(th);
+      });
 
-          // Zoom to the tree
-          row.addEventListener("click", () => {
-            view.graphics.removeAll();
-            view.graphics.add({
-              geometry: feat.geometry,
-              symbol: {
-                type: "simple-marker",
-                style: "diamond",
-                size: "16px",
-                color: "orange",
-                outline: { width: 2, color: "white" }
-              }
-            });
-            const centerPoint = feat.geometry.extent
-              ? feat.geometry.extent.center
-              : feat.geometry;
-            view.goTo({
-              center: centerPoint,
-              scale: 2000    // ~1:2 000 scale on every basemap
-            });
+      // Populate table body
+      const tbody = table.createTBody();
+      result.features.forEach(feat => {
+        const row = tbody.insertRow();
+        row.insertCell().textContent = feat.attributes.tencay;
+        row.insertCell().textContent = feat.attributes.loaicay;
+        row.insertCell().textContent = feat.attributes.tentuyendu;
+        row.insertCell().textContent = feat.attributes.diachi;
+        row.style.cursor = "pointer";
+
+        // Zoom behavior on row click...
+        row.addEventListener("click", () => {
+          view.graphics.removeAll();
+          view.graphics.add({
+            geometry: feat.geometry,
+            symbol: {
+              type: "simple-marker",
+              style: "diamond",
+              size: "16px",
+              color: "orange",
+              outline: { width: 2, color: "white" }
+            }
           });
+          const center = feat.geometry.extent
+            ? feat.geometry.extent.center
+            : feat.geometry;
+          view.goTo({ center, scale: 2000 });
         });
+      });
 
-        container.appendChild(table); 
+      // Inject into the page
+      container.appendChild(table);
+
       })
       .catch(err => {
         console.error(err);
@@ -258,6 +331,19 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search, BasemapGallery) 
     });
   });
 
+  const sidebarToggle = document.getElementById("sidebarToggle");
+  const mainSidebar   = document.getElementById("mainSidebar");
+  const searchSidebar = document.getElementById("searchSidebar");
+
+  sidebarToggle.addEventListener("click", () => {
+    // Toggle both sidebars collapsed/expanded
+    mainSidebar.classList.toggle("collapsed");
+    searchSidebar.classList.toggle("collapsed");
+    // Optionally switch the icon:
+    sidebarToggle.textContent = mainSidebar.classList.contains("collapsed")
+      ? "☰"    // collapsed: show hamburger
+      : "←";   // expanded: show arrow
+  });
 });
 
 function togglebasemap() {
