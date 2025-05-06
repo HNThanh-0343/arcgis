@@ -7,37 +7,43 @@ require([
   "esri/widgets/Search",
   "esri/widgets/BasemapGallery",
   "esri/widgets/Home",
-  "esri/Viewpoint"
+  "esri/Viewpoint",
+  "esri/widgets/ScaleBar",
+  "esri/Graphic",
+  "esri/geometry/geometryEngine",
 
 ], 
-function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery, Home, Viewpoint) {
+function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery, Home, Viewpoint, ScaleBar, Graphic, geometryEngine) {
 
   const treeLayer = new FeatureLayer({
-    url: "https://gis.eastnegev.org/arcgis/rest/services/trees/FeatureServer/0",
+    url: "https://gishue.hue.gov.vn/server/rest/services/BanDoDuLich_HueCIT/CayXanh_CQ_DuLich/FeatureServer/0",
     popupTemplate: {
       title: "{TenCay}",
       content: [{
         type: "fields",
         fieldInfos: [
-          { fieldName: "point_Elevation ", label: "Elevation" },
-          { fieldName: "OBJECTID "}
+          { fieldName: "TenCay", label: "Tên cây" },
+          { fieldName: "loaicay", label: "Loại cây" },
+          { fieldName: "TenTuyenDu", label: "Tên tuyến đường" },
+          { fieldName: "DiaChi", label: "Địa chỉ" },
+          { fieldName: "GhiChu", label: "Ghi chú" }
         ]
       }]
     },
   });
 
   window.treeLayer = treeLayer;
-  
+  let selectedFeature = null;  // to store the selected tree for buffering
 
   const map = new Map({
-    basemap: "streets",
+    basemap: "streets-navigation-vector",
     layers: [treeLayer]
   });
 
   const view = new MapView({
     container: "viewDiv",
     map: map,
-    zoom: 13
+    zoom: 16
   });
 
   //Once the layer is loaded, get its full extent…
@@ -73,6 +79,13 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery,
   // Legend
   const legend = new Legend({ view: view });
   view.ui.add(legend, "bottom-right");
+
+  // Scale bar
+  const scaleBar = new ScaleBar({
+    view: view,
+    unit: "metric" // metric or imperial
+  });
+  view.ui.add(scaleBar, "bottom-right");
 
   // Basemap
   const basemapgallery = new BasemapGallery ({  
@@ -144,8 +157,18 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery,
     });
   });
 
-  // Search base on tree name or area/road
   view.when(() => {
+
+    // allow selecting a tree by clicking on it
+    view.on("click", async (event) => {
+      const hit = await view.hitTest(event, { include: treeLayer });
+      if (hit.results.length) {
+        const g = hit.results[0].graphic;
+        view.graphics.removeAll();
+        view.graphics.add(g);
+        selectedFeature = g;    // <— save it for buffering
+      }
+    });
 
     const areaSelect = document.getElementById("areaFilter");
     const roadSelect = document.getElementById("roadFilter");
@@ -307,6 +330,7 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery,
               outline: { width: 2, color: "white" }
             }
           });
+          selectedFeature = feat;  // Store selected feature for later use
           const center = feat.geometry.extent
             ? feat.geometry.extent.center
             : feat.geometry;
@@ -337,6 +361,58 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery,
       searchSidebar.style.display = "none";
       mainSidebar.style.display = "block";
     });
+
+    // BUFFER TOOL
+    document.getElementById("bufferBtn").addEventListener("click", () => {
+      if (!selectedFeature) {
+        alert("Please click a tree on the map first.");
+        return;
+      }
+      const dist = parseFloat(document.getElementById("bufferDistance").value);
+      if (!(dist > 0)) {
+        alert("Enter a valid distance in meters.");
+        return;
+      }
+
+      // create a buffer geometry
+      const bufferGeom = geometryEngine.geodesicBuffer(
+        selectedFeature.geometry, dist, "meters"
+      );
+
+      // draw buffer + the tree
+      view.graphics.removeAll();
+      view.graphics.add(new Graphic({
+        geometry: bufferGeom,
+        symbol: {
+          type: "simple-fill",
+          color: [0,0,0,0.1],
+          outline: { color:[0,0,0,0.6], width:2 }
+        }
+      }));
+      view.graphics.add(selectedFeature);
+
+      // zoom to buffer
+      view.goTo(bufferGeom.extent.expand(1.2));
+
+      // optional: highlight all trees inside
+      treeLayer.queryFeatures({
+        geometry: bufferGeom,
+        spatialRelationship: "intersects",
+        outFields: ["*"],
+        returnGeometry: true
+      }).then(({ features })=>{
+        features.forEach(f=> view.graphics.add(new Graphic({
+          geometry: f.geometry,
+          symbol: {
+            type: "simple-marker",
+            style: "circle",
+            size: "10px",
+            color: "green",
+            outline:{ color:"white",width:1 }
+          }
+        })));
+      });
+    });
   });
 
   const sidebarToggle = document.getElementById("sidebarToggle");
@@ -349,9 +425,10 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery,
     searchSidebar.classList.toggle("collapsed");
     // Optionally switch the icon:
     sidebarToggle.textContent = mainSidebar.classList.contains("collapsed")
-      ? "☰"    // collapsed: show hamburger
-      : "←";   // expanded: show arrow
+      ? "☰" 
+      : "←";   
   });
+
 });
 
 function togglebasemap() {
