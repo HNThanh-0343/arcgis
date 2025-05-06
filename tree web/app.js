@@ -6,9 +6,11 @@ require([
   "esri/widgets/LayerList",
   "esri/widgets/Search",
   "esri/widgets/BasemapGallery",
-  "esri/widgets/Home",  
+  "esri/widgets/Home",
+  "esri/Viewpoint"
+
 ], 
-function(Map, MapView, FeatureLayer, Legend, LayerList ,Search ,BasemapGallery,Home) {
+function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery, Home, Viewpoint) {
 
   const treeLayer = new FeatureLayer({
     url: "https://gis.eastnegev.org/arcgis/rest/services/trees/FeatureServer/0",
@@ -18,6 +20,7 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search ,BasemapGallery,H
         type: "fields",
         fieldInfos: [
           { fieldName: "point_Elevation ", label: "Elevation" },
+          { fieldName: "OBJECTID "}
         ]
       }]
     },
@@ -34,17 +37,26 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search ,BasemapGallery,H
   const view = new MapView({
     container: "viewDiv",
     map: map,
-
     zoom: 13
   });
 
-  treeLayer.when(() => {
-    treeLayer.queryExtent().then((response) => {
-      if (response.extent) {
-        view.goTo(response.extent.expand(1.2));
-      }
-    });
-  });
+  //Once the layer is loaded, get its full extent…
+  treeLayer.when(() => treeLayer.queryExtent())
+    .then(({ extent }) => {
+      const padded = extent.expand(1.2);
+
+      // …zoom the view there…
+      return view.goTo(padded).then(() => padded);
+    })
+    .then(padded => {
+      // …and *then* create the Home widget with that extent
+      const home = new Home({
+        view,
+        viewpoint: new Viewpoint({ targetGeometry: padded })
+      });
+      view.ui.add(home, "top-right");
+    })
+    .catch(err => console.error(err));
 
   const layerlist = new LayerList({
       view,
@@ -57,10 +69,6 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search ,BasemapGallery,H
 
   // Zoom
   view.ui.move("zoom", "top-right");
-
-  // Home button
-  const home = new Home({view: view });
-  view.ui.add(home, "top-right");
 
   // Legend
   const legend = new Legend({ view: view });
