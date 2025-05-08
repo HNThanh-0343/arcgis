@@ -11,40 +11,71 @@ require([
   "esri/widgets/ScaleBar",
   "esri/Graphic",
   "esri/geometry/geometryEngine",
+  "esri/smartMapping/renderers/pieChart"
 
 ], 
-function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery, Home, Viewpoint, ScaleBar, Graphic, geometryEngine) {
+function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery, Home, Viewpoint, ScaleBar, Graphic, geometryEngine, pieChart) {
 
-  const treeLayer = new FeatureLayer({
-    url: "https://gishue.hue.gov.vn/server/rest/services/BanDoDuLich_HueCIT/CayXanh_CQ_DuLich/FeatureServer/0",
-    popupTemplate: {
-      title: "{TenCay}",
-      content: [{
-        type: "fields",
-        fieldInfos: [
-          { fieldName: "TenCay", label: "Tên cây" },
-          { fieldName: "loaicay", label: "Loại cây" },
-          { fieldName: "TenTuyenDu", label: "Tên tuyến đường" },
-          { fieldName: "DiaChi", label: "Địa chỉ" },
-          { fieldName: "GhiChu", label: "Ghi chú" }
-        ]
-      }]
-    },
+  const serviceUrl = "https://gishue.hue.gov.vn/server/rest/services/BanDoDuLich_HueCIT/CayXanh_CQ_DuLich/FeatureServer";
+
+  // 1) Instantiate both sub‑layers
+  const layer0 = new FeatureLayer({
+    url: `${serviceUrl}/0`,
+    outFields: ["*"],
+    title: "Cây xanh",
   });
 
-  window.treeLayer = treeLayer;
-  let selectedFeature = null;  // to store the selected tree for buffering
+  const layer1 = new FeatureLayer({
+    url: `${serviceUrl}/1`,
+    outFields: ["*"],
+    title: "Di tích",
+  });
 
+  // 2) Put them on the map
   const map = new Map({
     basemap: "streets-navigation-vector",
-    layers: [treeLayer]
+    layers: [ layer1, layer0 ]
   });
 
   const view = new MapView({
     container: "viewDiv",
+    center: [ 0, 0 ], 
     map: map,
-    zoom: 16
   });
+
+  // 3) A helper to build popupTemplate from fields
+  function applyDynamicPopup(layer, titleField, keepFields) {
+    layer.outFields = ["*"];
+    layer.when(() => {
+      // Only include the fields you’ve specified
+      const fieldInfos = layer.fields
+        .filter(f => keepFields.includes(f.name))
+        .map(f => ({
+          fieldName: f.name,
+          label:     f.alias,
+          visible:   true
+        }));
+  
+      layer.popupTemplate = {
+        title: `{${titleField}}`,
+        content: [{
+          type: "fields",
+          fieldInfos
+        }]
+      };
+    });
+  }
+  
+
+  // 4) Apply dynamic popups to both
+  applyDynamicPopup(layer0, "TenCay", ["tencay", "tentuyendu", "diachi"]);
+  applyDynamicPopup(layer1, "TenDiTich", ["tenditich", "dientich"]);  
+  
+  const treeLayer = layer0;
+  const heritageLayer = layer1;
+  window.treeLayer = treeLayer; // for debugging
+  let selectedFeature = null;  // to store the selected tree for buffering
+  let pieClusterConfig = null; // to store the pie chart config for clustering
 
   //Once the layer is loaded, get its full extent…
   treeLayer.when(() => treeLayer.queryExtent())
@@ -66,7 +97,7 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery,
 
   const layerlist = new LayerList({
       view,
-      container: "layerlist"
+      container: "layerlist"  
   });
 
   // Search widget
@@ -93,51 +124,6 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery,
     container: "basemap", 
   });
 
-  // Layer visibility
-  document.getElementById("layerToggle").addEventListener("change", (e) => {
-    treeLayer.visible = e.target.checked;
-  });
-
-  // full cluster settings in one place
-  const clusterConfig = {
-    type: "cluster",
-    clusterRadius: "80px",
-    clusterMinSize: "20px",
-    clusterMaxSize: "100px",
-    visibilityInfo: {
-      type: "scale",
-      minScale: 5000
-    },
-    popupTemplate: {
-      title: "{cluster_count} trees",
-      content: "This cluster represents {cluster_count} trees"
-    },
-    labelingInfo: [
-      {
-        deconflictionStrategy: "none",
-        labelPlacement: "center-center",
-        labelExpressionInfo: { expression: "$feature.cluster_count" },
-        symbol: {
-          type: "text",
-          color: "#fff",
-          haloColor: "#000",
-          haloSize: "1px",
-          font: { size: "14px", weight: "bold" }
-        }
-      }
-    ]
-  };
-
-  // Cluster toggle
-  document.getElementById("clusterToggle").addEventListener("change", (e) => {
-    treeLayer.featureReduction = e.target.checked
-      ? { type: "cluster" }
-      : null;
-
-    treeLayer.featureReduction = e.target.checked ? clusterConfig : null;
-    treeLayer.refresh();
-  });
-
   // Tree type checkboxes
   const checkboxes = document.querySelectorAll(".treeTypeCheckbox");
 
@@ -159,20 +145,11 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery,
 
   view.when(() => {
 
-    // allow selecting a tree by clicking on it
-    view.on("click", async (event) => {
-      const hit = await view.hitTest(event, { include: treeLayer });
-      if (hit.results.length) {
-        const g = hit.results[0].graphic;
-        view.graphics.removeAll();
-        view.graphics.add(g);
-        selectedFeature = g;    // <— save it for buffering
-      }
-    });
-
+    // Create a search input and button
     const areaSelect = document.getElementById("areaFilter");
     const roadSelect = document.getElementById("roadFilter");
-  
+
+    // Fill the area select with distinct areas
     function fillSelect(set, select) {
       select.innerHTML = 
         `<option value="">All ${ select.id === 'areaFilter' ? 'Areas' : 'Roads' }</option>`;
@@ -362,6 +339,17 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery,
       mainSidebar.style.display = "block";
     });
 
+    // allow selecting a tree by clicking on it for buffering
+    view.on("click", async (event) => {
+      const hit = await view.hitTest(event, { include: treeLayer });
+      if (hit.results.length) {
+        const g = hit.results[0].graphic;
+        view.graphics.removeAll();
+        view.graphics.add(g);
+        selectedFeature = g;    // <— save it for buffering
+      }
+    });
+
     // BUFFER TOOL
     document.getElementById("bufferBtn").addEventListener("click", () => {
       if (!selectedFeature) {
@@ -413,8 +401,55 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery,
         })));
       });
     });
-  });
 
+    // 1) Build the pie-chart renderer for clustering
+    pieChart.createRendererForClustering({
+      layer: treeLayer,
+      view: view,
+      shape: "donut"               
+    })
+    .then(({ renderer, fields }) => {
+
+      // assemble your cluster config
+      pieClusterConfig = {
+        type: "cluster",
+        clusterRadius: "80px",
+        renderer, 
+        popupTemplate: {
+          title: "{cluster_count} trees",
+          content: [{
+            type: "media",
+            mediaInfos: [{
+              type: "pie-chart",
+              caption: "Tree type distribution",
+              value: { fields: fields.map(f => f.name) }
+            }]
+          }]
+        }
+      };
+
+      // 2) Now that pieClusterConfig is valid, wire up the checkbox
+      const chk = document.getElementById("clusterToggle");
+      chk.disabled = false;     
+      chk.addEventListener("change", () => {
+        treeLayer.featureReduction = chk.checked
+          ? pieClusterConfig    // turn clustering ON
+          : null;               // turn clustering OFF
+        treeLayer.refresh();    
+      });
+
+      // OPTIONAL: if you want clusters by default:
+      // chk.checked = true;
+      // treeLayer.featureReduction = pieClusterConfig;
+    })
+    .catch(err => {
+      console.error("Failed to create pieChart renderer:", err);
+    });
+    
+
+  });
+  
+  // Sidebar toggle
   const sidebarToggle = document.getElementById("sidebarToggle");
   const mainSidebar   = document.getElementById("mainSidebar");
   const searchSidebar = document.getElementById("searchSidebar");
@@ -428,9 +463,9 @@ function(Map, MapView, FeatureLayer, Legend, LayerList ,Search , BasemapGallery,
       ? "☰" 
       : "←";   
   });
-
+  
 });
-
+// toggle the visibility of the basemap gallery
 function togglebasemap() {
   const container = document.getElementById("basemapContainer");
   container.style.display = container.style.display === "none" ? "block" : "none";
